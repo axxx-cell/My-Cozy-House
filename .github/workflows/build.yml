@@ -1,19 +1,57 @@
 name: Build APK
-on: [push, workflow_dispatch]
+on:
+  push:
+  workflow_dispatch:
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+
+      - name: Unpack all zips in order
+        run: |
+          mkdir -p _proj
+          for z in $(ls MyCozyHouse-group*.zip 2>/dev/null | sort -V); do
+            echo "Unpacking $z"
+            rm -rf _tmp && mkdir _tmp
+            unzip -q -o "$z" -d _tmp
+            # every zip must contain exactly ONE top folder named MyCozyHouse
+            if [ ! -d "_tmp/MyCozyHouse/app" ] && [ ! -d "_tmp/MyCozyHouse/.github" ]; then
+              echo "::warning::$z has a wrong folder layout and was SKIPPED (needs MyCozyHouse/ at the top)"
+              continue
+            fi
+            cp -a _tmp/MyCozyHouse/. _proj/
+          done
+          rm -rf _tmp
+          echo "Kotlin files in project:"; find _proj -name "*.kt" | wc -l
+
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
-      - uses: gradle/actions/setup-gradle@v3
+
+      - uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: 8.5
-      - run: gradle assembleDebug
-      - uses: actions/upload-artifact@v4
+          cache-disabled: true
+
+      - name: Build
+        run: |
+          set -o pipefail
+          cd _proj && gradle assembleDebug 2>&1 | tee ../build.log
+
+      - name: Show only the compile errors (screenshot this!)
+        if: failure()
+        run: |
+          echo "## First compile errors" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          grep -E "^e: " build.log | sed 's#file:///home/runner/work/[^/]*/[^/]*/_proj/##' | head -25 >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          grep -E "^e: " build.log | sed 's#file:///home/runner/work/[^/]*/[^/]*/_proj/##' | head -25 || true
+
+      - uses: actions/upload-artifact@v5
         with:
           name: MyCozyHouse-debug
-          path: app/build/outputs/apk/debug/*.apk
+          path: _proj/app/build/outputs/apk/debug/*.apk
+          
