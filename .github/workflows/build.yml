@@ -16,12 +16,13 @@ jobs:
             echo "Unpacking $z"
             rm -rf _tmp && mkdir _tmp
             unzip -q -o "$z" -d _tmp
-            # every zip must contain exactly ONE top folder named MyCozyHouse
-            if [ ! -d "_tmp/MyCozyHouse/app" ] && [ ! -d "_tmp/MyCozyHouse/.github" ]; then
-              echo "::warning::$z has a wrong folder layout and was SKIPPED (needs MyCozyHouse/ at the top)"
+            # find the folder that contains app/src (whatever the top folder is called)
+            appdir=$(find _tmp -maxdepth 3 -type d -name app -exec test -d '{}/src' ';' -print | head -n 1)
+            if [ -z "$appdir" ]; then
+              echo "::warning::$z has no app/src folder and was SKIPPED"
               continue
             fi
-            cp -a _tmp/MyCozyHouse/. _proj/
+            cp -a "$(dirname "$appdir")"/. _proj/
           done
           rm -rf _tmp
           echo "Kotlin files in project:"; find _proj -name "*.kt" | wc -l
